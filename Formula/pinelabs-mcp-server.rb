@@ -466,8 +466,9 @@ class PinelabsMcpServer < Formula
     # Build cryptography without build-isolation so it uses
     # the maturin / cffi already present in the virtualenv.
     resource("cryptography").stage do
-      system libexec/"bin/pip", "install", "--no-deps",
-             "--no-build-isolation", "--no-binary", ":all:", "-v", "."
+      system libexec/"bin/python", "-m", "pip", "install",
+             "--no-deps", "--no-build-isolation", "--no-binary", ":all:",
+             "-v", "."
     end
 
     # Install every remaining resource the normal way
