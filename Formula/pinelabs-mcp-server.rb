@@ -7,7 +7,9 @@ class PinelabsMcpServer < Formula
   sha256 "424bd8b78163a5f594cac604d1404c0a973e786472a936eba1e2a143088170c2"
   license "Apache-2.0"
 
+  depends_on "openssl@3"
   depends_on "python@3.13"
+  depends_on "rust" => :build
 
   resource "aiofile" do
     url "https://files.pythonhosted.org/packages/67/e2/d7cb819de8df6b5c1968a2756c3cb4122d4fa2b8fc768b53b7c9e5edb646/aiofile-3.9.0.tar.gz"
@@ -57,6 +59,16 @@ class PinelabsMcpServer < Formula
   resource "cffi" do
     url "https://files.pythonhosted.org/packages/eb/56/b1ba7935a17738ae8453301356628e8147c79dbb825bcbc73dc7401f9846/cffi-2.0.0.tar.gz"
     sha256 "44d1b5909021139fe36001ae048dbdde8214afa20200eda0f64c068cac5d5529"
+  end
+
+  resource "maturin" do
+    url "https://files.pythonhosted.org/packages/39/16/b284a7bc4af3dd87717c784278c1b8cb18606ad1f6f7a671c47bfd9c3df0/maturin-1.13.1.tar.gz"
+    sha256 "9a87ff3b8e4d1c6eac33ebfe8e261e8236516d98d45c0323550621819b5a1a2f"
+  end
+
+  resource "setuptools" do
+    url "https://files.pythonhosted.org/packages/4f/db/cfac1baf10650ab4d1c111714410d2fbb77ac5a616db26775db562c8fab2/setuptools-82.0.1.tar.gz"
+    sha256 "7d872682c5d01cfde07da7bccc7b65469d3dca203318515ada1de5eda35efbf9"
   end
 
   resource "click" do
@@ -435,7 +447,37 @@ class PinelabsMcpServer < Formula
   end
 
   def install
-    virtualenv_install_with_resources
+    # OpenSSL paths for building cryptography from source
+    ENV["OPENSSL_DIR"] = Formula["openssl@3"].opt_prefix
+    ENV["OPENSSL_INCLUDE_DIR"] = "#{Formula["openssl@3"].opt_prefix}/include"
+    ENV["OPENSSL_LIB_DIR"] = "#{Formula["openssl@3"].opt_prefix}/lib"
+
+    venv = virtualenv_create(libexec, "python3.13")
+
+    # Pre-install build dependencies needed to compile cryptography.
+    # maturin (Rust-based) must be available in the venv so that pip
+    # can build cryptography without network-fetching it into an
+    # isolated build env (which fails under --no-binary :all:).
+    venv.pip_install resource("setuptools")
+    venv.pip_install resource("pycparser")
+    venv.pip_install resource("cffi")
+    venv.pip_install resource("maturin")
+
+    # Build cryptography without build-isolation so it uses
+    # the maturin / cffi already present in the virtualenv.
+    resource("cryptography").stage do
+      system libexec/"bin/pip", "install", "--no-deps",
+             "--no-build-isolation", "--no-binary", ":all:", "-v", "."
+    end
+
+    # Install every remaining resource the normal way
+    remaining = resources.reject { |r|
+      %w[setuptools pycparser cffi maturin cryptography].include?(r.name)
+    }
+    remaining.each { |r| venv.pip_install r }
+
+    # Link the main package
+    venv.pip_install_and_link buildpath
   end
 
   test do
